@@ -3,9 +3,8 @@
 
 # But keep the directory structure
 !.gitignore
-!postgres/
-# Note: postgres/ must be empty - PostgreSQL initializes it on first run
 !redis/.gitkeep
 !postiz/.gitkeep
 !postiz/config/.gitkeep
 !postiz/uploads/.gitkeep
+# Note: postgres uses a Docker named volume (eb24-postiz-postgres-data)

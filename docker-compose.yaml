@@ -4,10 +4,10 @@
 # Social media scheduling and management platform
 # Accessible at: https://social.eblej24.com
 #
-# Data Storage: All persistent data stored in ./data/ for easy backup
-#   ./data/postgres/    - PostgreSQL database files
-#   ./data/redis/       - Redis persistence
-#   ./data/postiz/      - Application config and uploads
+# Data Storage:
+#   postgres_data volume - PostgreSQL database (Docker managed)
+#   ./data/redis/        - Redis persistence
+#   ./data/postiz/       - Application config and uploads
 # =============================================================================
 
 services:
@@ -132,7 +132,7 @@ services:
       POSTIZ_DB: ${POSTIZ_DB:-postiz}
       TEMPORAL_DB: ${TEMPORAL_DB:-temporal}
     volumes:
-      - ./data/postgres:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
       - ./config/postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
     networks:
       - internal
@@ -141,12 +141,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - SETGID
-      - SETUID
 
   # ---------------------------------------------------------------------------
   # POSTIZ REDIS - Cache (internal only)
@@ -245,6 +239,13 @@ services:
       - temporal
     cap_drop:
       - ALL
+
+# =============================================================================
+# VOLUMES - Named volumes for persistent data
+# =============================================================================
+volumes:
+  postgres_data:
+    name: eb24-postiz-postgres-data
 
 # =============================================================================
 # NETWORKS - Connect to existing eblej24 infrastructure

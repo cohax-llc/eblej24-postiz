@@ -19,7 +19,7 @@ services:
       FRONTEND_URL: ${POSTIZ_FRONTEND_URL:-https://social.eblej24.com}
       NEXT_PUBLIC_BACKEND_URL: ${POSTIZ_BACKEND_URL:-https://social.eblej24.com/api}
       JWT_SECRET: ${POSTIZ_JWT_SECRET}
-      DATABASE_URL: ${POSTIZ_DATABASE_URL:-postgresql://postiz-user:postiz-password@postiz-postgres:5432/postiz-db-local}
+      DATABASE_URL: ${POSTIZ_DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/postiz}
       REDIS_URL: redis://postiz-redis:6379
       BACKEND_INTERNAL_URL: http://localhost:3000
       TEMPORAL_ADDRESS: temporal:7233
@@ -86,7 +86,7 @@ services:
       - public
       - internal
     depends_on:
-      postiz-postgres:
+      postgres:
         condition: service_healthy
       postiz-redis:
         condition: service_healthy
@@ -102,22 +102,30 @@ services:
       - ALL
 
   # ---------------------------------------------------------------------------
-  # POSTIZ POSTGRES - Database (internal only)
+  # POSTGRES - Shared Database (internal only)
   # ---------------------------------------------------------------------------
-  postiz-postgres:
+  # Single PostgreSQL instance with multiple databases:
+  #   - postiz: Main application database
+  #   - temporal: Workflow engine database
+  #   - temporal_visibility: Temporal visibility database
+  postgres:
     image: postgres:17-alpine
-    container_name: postiz-postgres
+    container_name: postgres
     restart: unless-stopped
     environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postiz-password}
-      POSTGRES_USER: ${POSTGRES_USER:-postiz-user}
-      POSTGRES_DB: ${POSTGRES_DB:-postiz-db-local}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_DB: postgres
+      # Additional databases created via init script
+      POSTIZ_DB: ${POSTIZ_DB:-postiz}
+      TEMPORAL_DB: ${TEMPORAL_DB:-temporal}
     volumes:
-      - postiz_postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
+      - ./config/postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
     networks:
       - internal
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postiz-user} -d ${POSTGRES_DB:-postiz-db-local}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -148,33 +156,6 @@ services:
       - ALL
 
   # ---------------------------------------------------------------------------
-  # TEMPORAL POSTGRES - Database for Temporal (internal only)
-  # ---------------------------------------------------------------------------
-  temporal-postgres:
-    image: postgres:16-alpine
-    container_name: temporal-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_PASSWORD: ${TEMPORAL_POSTGRES_PASSWORD:-temporal}
-      POSTGRES_USER: ${TEMPORAL_POSTGRES_USER:-temporal}
-      POSTGRES_DB: ${TEMPORAL_POSTGRES_DB:-temporal}
-    volumes:
-      - temporal_postgres_data:/var/lib/postgresql/data
-    networks:
-      - internal
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${TEMPORAL_POSTGRES_USER:-temporal}"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - SETGID
-      - SETUID
-
-  # ---------------------------------------------------------------------------
   # TEMPORAL - Workflow Engine (PostgreSQL backend, no Elasticsearch)
   # ---------------------------------------------------------------------------
   temporal:
@@ -184,9 +165,11 @@ services:
     environment:
       - DB=postgres12
       - DB_PORT=5432
-      - POSTGRES_USER=${TEMPORAL_POSTGRES_USER:-temporal}
-      - POSTGRES_PWD=${TEMPORAL_POSTGRES_PASSWORD:-temporal}
-      - POSTGRES_SEEDS=temporal-postgres
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PWD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_SEEDS=postgres
+      - DBNAME=${TEMPORAL_DB:-temporal}
+      - VISIBILITY_DBNAME=${TEMPORAL_DB:-temporal}_visibility
       - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
       - ENABLE_ES=false
     volumes:
@@ -194,7 +177,7 @@ services:
     networks:
       - internal
     depends_on:
-      temporal-postgres:
+      postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 7233 || exit 1"]
@@ -257,14 +240,11 @@ volumes:
   postiz_uploads:
     name: eblej24_postiz_uploads
 
-  postiz_postgres_data:
-    name: eblej24_postiz_postgres_data
+  postgres_data:
+    name: eblej24_postgres_data
 
   postiz_redis_data:
     name: eblej24_postiz_redis_data
-
-  temporal_postgres_data:
-    name: eblej24_temporal_postgres_data
 
 # =============================================================================
 # NETWORKS - Connect to existing eblej24 infrastructure

@@ -26,8 +26,9 @@ services:
       FRONTEND_URL: ${POSTIZ_FRONTEND_URL:-https://social.eblej24.com}
       NEXT_PUBLIC_BACKEND_URL: ${POSTIZ_BACKEND_URL:-https://social.eblej24.com/api}
       JWT_SECRET: ${POSTIZ_JWT_SECRET:?POSTIZ_JWT_SECRET is required}
-      DATABASE_URL: ${POSTIZ_DATABASE_URL:?POSTIZ_DATABASE_URL is required}
-      REDIS_URL: ${REDIS_URL:-redis://postiz-redis:6379}
+      # Database URL built from postgres credentials (no separate variable needed)
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTIZ_DB:-postiz}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@postiz-redis:6379}
       BACKEND_INTERNAL_URL: http://localhost:3000
       TEMPORAL_ADDRESS: temporal:7233
       IS_GENERAL: 'true'

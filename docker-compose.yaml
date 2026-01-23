@@ -15,9 +15,11 @@ services:
   # POSTIZ - Main Application
   # ---------------------------------------------------------------------------
   postiz:
-    image: ghcr.io/gitroomhq/postiz-app:latest
+    image: ghcr.io/gitroomhq/postiz-app:v2.12.1
     container_name: postiz
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       # === Required Settings
       MAIN_URL: ${POSTIZ_MAIN_URL:-https://social.eblej24.com}

@@ -23,9 +23,9 @@ services:
       MAIN_URL: ${POSTIZ_MAIN_URL:-https://social.eblej24.com}
       FRONTEND_URL: ${POSTIZ_FRONTEND_URL:-https://social.eblej24.com}
       NEXT_PUBLIC_BACKEND_URL: ${POSTIZ_BACKEND_URL:-https://social.eblej24.com/api}
-      JWT_SECRET: ${POSTIZ_JWT_SECRET}
-      DATABASE_URL: ${POSTIZ_DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/postiz}
-      REDIS_URL: redis://postiz-redis:6379
+      JWT_SECRET: ${POSTIZ_JWT_SECRET:?POSTIZ_JWT_SECRET is required}
+      DATABASE_URL: ${POSTIZ_DATABASE_URL:?POSTIZ_DATABASE_URL is required}
+      REDIS_URL: ${REDIS_URL:-redis://postiz-redis:6379}
       BACKEND_INTERNAL_URL: http://localhost:3000
       TEMPORAL_ADDRESS: temporal:7233
       IS_GENERAL: 'true'
@@ -118,7 +118,7 @@ services:
     container_name: postgres
     restart: unless-stopped
     environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_DB: postgres
       # Additional databases created via init script
@@ -148,12 +148,16 @@ services:
     image: redis:7.2-alpine
     container_name: postiz-redis
     restart: unless-stopped
+    command: >
+      sh -c 'redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass "$REDIS_PASSWORD"}'
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
     volumes:
       - ./data/redis:/data
     networks:
       - internal
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli ${REDIS_PASSWORD:+-a $REDIS_PASSWORD} ping | grep -q PONG"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -171,7 +175,7 @@ services:
       - DB=postgres12
       - DB_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PWD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_PWD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       - POSTGRES_SEEDS=postgres
       - DBNAME=${TEMPORAL_DB:-temporal}
       - VISIBILITY_DBNAME=${TEMPORAL_DB:-temporal}_visibility

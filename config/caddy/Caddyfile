@@ -15,7 +15,16 @@
 # Main application accessible at: https://social.eblej24.com
 # API accessible at: https://social.eblej24.com/api/*
 social.eblej24.com {
-    import security_headers
+    # Security headers (inline if security_headers snippet not available)
+    header {
+        # Security headers
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # Remove server identification
+        -Server
+    }
 
     # API requests
     handle /api/* {
@@ -26,8 +35,11 @@ social.eblej24.com {
         }
     }
 
-    # Upload handling with increased body size
+    # Upload handling with increased body size (100MB limit)
     handle /uploads/* {
+        request_body {
+            max_size 100MB
+        }
         reverse_proxy postiz:5000 {
             health_uri /
             health_interval 30s

@@ -15,59 +15,58 @@
 # Main application accessible at: https://social.eblej24.com
 # API accessible at: https://social.eblej24.com/api/*
 social.eblej24.com {
-    # Security headers (inline if security_headers snippet not available)
-    header {
-        # Security headers
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "SAMEORIGIN"
-        X-XSS-Protection "1; mode=block"
-        Referrer-Policy "strict-origin-when-cross-origin"
-        # Remove server identification
-        -Server
-    }
+	header {
+		# Security headers
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		X-XSS-Protection "1; mode=block"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Remove server identification
+		-Server
+	}
 
-    # API requests
-    handle /api/* {
-        reverse_proxy postiz:5000 {
-            health_uri /
-            health_interval 30s
-            health_timeout 10s
-        }
-    }
+	# API requests
+	handle /api/* {
+		reverse_proxy postiz:5000 {
+			health_uri /
+			health_interval 30s
+			health_timeout 10s
+		}
+	}
 
-    # Upload handling with increased body size (100MB limit)
-    handle /uploads/* {
-        request_body {
-            max_size 100MB
-        }
-        reverse_proxy postiz:5000 {
-            health_uri /
-            health_interval 30s
-            health_timeout 10s
-        }
-    }
+	# Upload handling with increased body size (100MB limit)
+	handle /uploads/* {
+		request_body {
+			max_size 100MB
+		}
+		reverse_proxy postiz:5000 {
+			health_uri /
+			health_interval 30s
+			health_timeout 10s
+		}
+	}
 
-    # WebSocket support for real-time updates
-    handle /socket.io/* {
-        reverse_proxy postiz:5000 {
-            transport http {
-                versions h2c 1.1
-            }
-        }
-    }
+	# WebSocket support for real-time updates
+	handle /socket.io/* {
+		reverse_proxy postiz:5000 {
+			transport http {
+				versions h2c 1.1
+			}
+		}
+	}
 
-    # All other requests (frontend)
-    handle {
-        reverse_proxy postiz:5000 {
-            health_uri /
-            health_interval 30s
-            health_timeout 10s
-        }
-    }
+	# All other requests (frontend)
+	handle {
+		reverse_proxy postiz:5000 {
+			health_uri /
+			health_interval 30s
+			health_timeout 10s
+		}
+	}
 
-    log {
-        output stdout
-        format console
-        level INFO
-    }
+	log {
+		output stdout
+		format console
+		level INFO
+	}
 }

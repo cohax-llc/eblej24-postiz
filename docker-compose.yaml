@@ -16,7 +16,14 @@ services:
   # POSTIZ - Main Application
   # ---------------------------------------------------------------------------
   eb24-postiz-app:
-    image: ghcr.io/gitroomhq/postiz-app:v2.12.1
+    # Build on `docker-compose up -d` with URLs from .env (fixes browser requesting :5000)
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        NEXT_PUBLIC_BACKEND_URL: ${POSTIZ_BACKEND_URL:-https://social.eblej24.com/api}
+        FRONTEND_URL: ${POSTIZ_FRONTEND_URL:-https://social.eblej24.com}
+    image: eb24-postiz-app:local
     container_name: eb24-postiz-app
     restart: unless-stopped
     env_file:

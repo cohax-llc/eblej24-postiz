@@ -34,8 +34,8 @@ So: **502 occurs specifically when creating a new user**, not on normal page loa
 - **Reverse proxy:** Caddy (config provided; runs elsewhere).
 - **App:** This repo’s `docker-compose.yaml`:
   - Service: `eb24-postiz-app`
-  - Image: `ghcr.io/gitroomhq/postiz-app:v2.12.1`
-  - Port: 5000 (internal)
+  - Image: `ghcr.io/gitroomhq/postiz-app:v2.12.1` (or built locally as `eb24-postiz-app:local`)
+  - Single entrypoint: **nginx on port 5000** inside the container. Nginx routes: `/api/` → backend (NestJS) on **3000**, `/` → frontend (Next.js) on **4200**, `/uploads/` → local files. Caddy proxies to container:5000 only.
   - Depends on: `eb24-postiz-postgres`, `eb24-postiz-redis`, `eb24-postiz-temporal` (all healthy before app starts).
 - **Caddy for social.eblej24.com:**
   - All traffic (including `/api/*`, `/socket.io/*`, `/uploads/*`) → `eb24-postiz-app:5000`.

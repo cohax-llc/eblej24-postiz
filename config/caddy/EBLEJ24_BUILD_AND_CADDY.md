@@ -2,6 +2,8 @@
 
 Your `.env` is correct (no :5000). If the browser still requests `https://social.eblej24.com:5000/api/`, the pre-built image has that URL baked into the client bundle at build time. Fix with **config only**: build your own image with build-args, and/or have Caddy handle port 5000.
 
+**Inside the container:** frontend and backend run on different ports. Nginx listens on **5000** (single entrypoint) and routes: `/api/` → backend on **3000**, `/` → frontend on **4200**, `/uploads/` → local files. Caddy talks only to nginx on 5000; the build-args below affect what the **browser** uses (public URL), not internal routing.
+
 ---
 
 ## Option 1: Build your own image with the correct URL (recommended)

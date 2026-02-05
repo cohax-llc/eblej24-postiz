@@ -1,5 +1,6 @@
 import { initializeSentry } from '@gitroom/nestjs-libraries/sentry/initialize.sentry';
 initializeSentry('backend', true);
+console.log('[postiz-backend] main.ts loaded');
 
 import { loadSwagger } from '@gitroom/helpers/swagger/load.swagger';
 import { json } from 'express';
@@ -19,6 +20,7 @@ import { ConfigurationChecker } from '@gitroom/helpers/configuration/configurati
 import { startMcp } from '@gitroom/nestjs-libraries/chat/start.mcp';
 
 async function start() {
+  console.log('[postiz-backend] start() called, creating Nest app...');
   const app = await NestFactory.create(AppModule, {
     rawBody: true,
     cors: {
@@ -42,7 +44,7 @@ async function start() {
       ],
     },
   });
-
+  console.log('[postiz-backend] Nest app created, starting MCP...');
   await startMcp(app);
 
   app.useGlobalPipes(
@@ -62,7 +64,7 @@ async function start() {
   loadSwagger(app);
 
   const port = process.env.PORT || 3000;
-
+  console.log('[postiz-backend] binding to port', port, '...');
   try {
     await app.listen(port);
 

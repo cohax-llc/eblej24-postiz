@@ -86,7 +86,7 @@ export const AddProviderButton: FC<{
           viewBox="0 0 16 16"
           fill="none"
         >
-          <g clip-path="url(#clip0_2452_193804)">
+          <g clipPath="url(#clip0_2452_193804)">
             <path
               d="M6.6668 8.66599C6.9531 9.04875 7.31837 9.36545 7.73783 9.59462C8.1573 9.82379 8.62114 9.96007 9.0979 9.99422C9.57466 10.0284 10.0532 9.95957 10.501 9.79251C10.9489 9.62546 11.3555 9.36404 11.6935 9.02599L13.6935 7.02599C14.3007 6.39732 14.6366 5.55531 14.629 4.68132C14.6215 3.80733 14.2709 2.97129 13.6529 2.35326C13.0348 1.73524 12.1988 1.38467 11.3248 1.37708C10.4508 1.36948 9.60881 1.70547 8.98013 2.31266L7.83347 3.45266M9.33347 7.33266C9.04716 6.94991 8.68189 6.6332 8.26243 6.40403C7.84297 6.17486 7.37913 6.03858 6.90237 6.00444C6.4256 5.97029 5.94708 6.03908 5.49924 6.20614C5.0514 6.3732 4.64472 6.63461 4.3068 6.97266L2.3068 8.97266C1.69961 9.60133 1.36363 10.4433 1.37122 11.3173C1.37881 12.1913 1.72938 13.0274 2.3474 13.6454C2.96543 14.2634 3.80147 14.614 4.67546 14.6216C5.54945 14.6292 6.39146 14.2932 7.02013 13.686L8.16013 12.546"
               stroke="currentColor"
@@ -165,6 +165,7 @@ export const CustomVariables: FC<{
     defaultValue?: string;
     validation: string;
     type: 'text' | 'password';
+    hint?: string;
   }>;
   close?: () => void;
   identifier: string;
@@ -208,13 +209,15 @@ export const CustomVariables: FC<{
   });
   const submit = useCallback(
     async (data: FieldValues) => {
-      const { url } = await (
-        await fetch(
-          `/integrations/social/${identifier}${
-            onboarding ? '?onboarding=true' : ''
-          }`
-        )
-      ).json();
+      const response = await fetch(
+        `/integrations/social/${identifier}${
+          onboarding ? '?onboarding=true' : ''
+        }`
+      );
+      if (response.status === 402) {
+        return;
+      }
+      const { url } = await response.json();
       modals.closeAll();
       gotoUrl(
         `/integrations/social/${identifier}?state=${url}&code=${Buffer.from(
@@ -236,11 +239,31 @@ export const CustomVariables: FC<{
         >
           {variables.map((variable) => (
             <div key={variable.key}>
-              <Input
-                label={variable.label}
-                name={variable.key}
-                type={variable.type == 'text' ? 'text' : 'password'}
-              />
+              {variable.hint ? (
+                <div className="flex flex-col gap-[6px]">
+                  <div className="text-[14px] flex items-center gap-[6px]">
+                    <span>{variable.label}</span>
+                    <span
+                      data-tooltip-id="tooltip"
+                      data-tooltip-content={variable.hint}
+                      className="w-[16px] h-[16px] rounded-full border border-textColor/60 text-textColor/60 flex items-center justify-center text-[11px] leading-none cursor-help select-none"
+                    >
+                      i
+                    </span>
+                  </div>
+                  <Input
+                    label=""
+                    name={variable.key}
+                    type={variable.type == 'text' ? 'text' : 'password'}
+                  />
+                </div>
+              ) : (
+                <Input
+                  label={variable.label}
+                  name={variable.key}
+                  type={variable.type == 'text' ? 'text' : 'password'}
+                />
+              )}
             </div>
           ))}
           <div>
@@ -251,6 +274,110 @@ export const CustomVariables: FC<{
     </div>
   );
 };
+const ExtensionNotFound: FC = () => {
+  const modals = useModals();
+  const t = useT();
+  return (
+    <div className="flex flex-col gap-[16px] pt-[8px]">
+      <p className="text-[14px] text-textColor/80">
+        {t(
+          'extension_not_available',
+          'The Postiz browser extension is not installed. You need to install it before connecting this channel.'
+        )}
+      </p>
+      <div className="flex gap-[10px]">
+        <Button
+          type="button"
+          className="flex-1"
+          onClick={() => {
+            window.open(
+              'https://chromewebstore.google.com/detail/postiz/cidhffagahknaeodkplfbcpfeielnkjl?hl=en',
+              '_blank'
+            );
+            modals.closeCurrent();
+          }}
+        >
+          {t('install_extension', 'Install Extension')}
+        </Button>
+        <Button
+          type="button"
+          className="flex-1 !bg-transparent border border-tableBorder text-textColor"
+          onClick={() => modals.closeCurrent()}
+        >
+          {t('cancel', 'Cancel')}
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+const ChromeExtensionWarning: FC<{
+  onConfirm: () => void;
+  onCancel: () => void;
+}> = ({ onConfirm, onCancel }) => {
+  const modals = useModals();
+  const t = useT();
+  return (
+    <div className="flex flex-col gap-[16px] pt-[8px]">
+      <p className="text-[14px] text-textColor/80">
+        {t(
+          'chrome_extension_warning_intro',
+          'This channel connects via the browser extension. Please be aware of the following:'
+        )}
+      </p>
+      <ul className="flex flex-col gap-[8px] list-disc ps-[20px] text-[14px] text-textColor/80">
+        <li>
+          {t(
+            'chrome_extension_warning_tos',
+            'Using a browser extension to interact with a platform may violate its terms of service and could result in your account being suspended or banned.'
+          )}
+        </li>
+        <li>
+          {t(
+            'chrome_extension_warning_unstable',
+            'This method is not as reliable as native integrations and may experience random disconnections.'
+          )}
+        </li>
+        <li>
+          {t(
+            'chrome_extension_warning_reconnect',
+            'You may need to reconnect periodically if the session expires.'
+          )}
+        </li>
+        <li>
+          We will store your cookies securely to facilitate the connection.
+        </li>
+        <li>
+          Postiz does not take responsibility for any issues arising or account
+          termination due to the use of this method.
+        </li>
+      </ul>
+      <div className="flex gap-[10px] mt-[8px]">
+        <Button
+          type="button"
+          className="flex-1"
+          onClick={() => {
+            modals.closeCurrent();
+            onConfirm();
+          }}
+        >
+          {t('i_understand_continue', 'I understand, continue')}
+        </Button>
+        <Button
+          type="button"
+          className="flex-1 !bg-transparent border border-tableBorder text-textColor"
+          onClick={() => {
+            modals.closeCurrent();
+            onCancel();
+          }}
+        >
+          {t('cancel', 'Cancel')}
+        </Button>
+      </div>
+    </div>
+  );
+};
+
 export const AddProviderComponent: FC<{
   social: Array<{
     identifier: string;
@@ -258,11 +385,17 @@ export const AddProviderComponent: FC<{
     toolTip?: string;
     isExternal: boolean;
     isWeb3: boolean;
+    isChromeExtension?: boolean;
+    extensionCookies?: Array<{
+      name: string;
+      domain: string;
+    }>;
     customFields?: Array<{
       key: string;
       label: string;
       validation: string;
       type: 'text' | 'password';
+      hint?: string;
     }>;
   }>;
   article: Array<{
@@ -272,9 +405,10 @@ export const AddProviderComponent: FC<{
   invite: boolean;
   update?: () => void;
   onboarding?: boolean;
+  isMobile?: boolean;
 }> = (props) => {
-  const { update, social, article, onboarding } = props;
-  const { isGeneral } = useVariables();
+  const { update, social, article, onboarding, isMobile } = props;
+  const { isGeneral, extensionId } = useVariables();
   const toaster = useToaster();
   const router = useRouter();
   const fetch = useFetch();
@@ -285,12 +419,14 @@ export const AddProviderComponent: FC<{
         identifier: string,
         isExternal: boolean,
         isWeb3: boolean,
+        isChromeExtension?: boolean,
         customFields?: Array<{
           key: string;
           label: string;
           validation: string;
           defaultValue?: string;
           type: 'text' | 'password';
+          hint?: string;
         }>
       ) =>
       async () => {
@@ -299,44 +435,60 @@ export const AddProviderComponent: FC<{
           const { component: Web3Providers } = web3List.find(
             (item) => item.identifier === identifier
           )!;
-          const { url } = await (
-            await fetch(
-              `/integrations/social/${identifier}${
-                onboarding ? '?onboarding=true' : ''
-              }`
-            )
-          ).json();
+          const response = await fetch(
+            `/integrations/social/${identifier}${
+              onboarding ? '?onboarding=true' : ''
+            }`
+          );
+          if (response.status === 402) {
+            return;
+          }
+          const { url } = await response.json();
           modal.openModal({
             title: `Add ${capitalize(identifier)}`,
             withCloseButton: true,
+            ...(isMobile ? { removeLayout: true, fullScreen: true } : {}),
             classNames: {
               modal: 'bg-transparent text-textColor',
             },
             children: (
-              <Web3Providers
-                onComplete={(code, newState) => {
-                  window.location.href = `/integrations/social/${identifier}?code=${code}&state=${newState}${
-                    onboarding ? '&onboarding=true' : ''
-                  }`;
-                }}
-                nonce={url}
-              />
+              <div
+                {...(isMobile ? { className: 'h-full bg-black p-[20px]' } : {})}
+              >
+                <Web3Providers
+                  onComplete={(code, newState) => {
+                    window.location.href = `/integrations/social/${identifier}?code=${encodeURIComponent(code)}&state=${newState}${
+                      onboarding ? '&onboarding=true' : ''
+                    }`;
+                  }}
+                  nonce={url}
+                />
+              </div>
             ),
           });
           return;
         };
         const gotoIntegration = async (externalUrl?: string) => {
+          // Mobile WebView: reuse the existing `externalUrl` param to
+          // carry the `postiz://` deep link so the backend redirects
+          // back to the iOS/Android app after OAuth completes, instead
+          // of the default web redirect.
           const params = [
-            externalUrl ? `externalUrl=${externalUrl}` : '',
+            `externalUrl=${encodeURIComponent(externalUrl)}`,
             onboardingParam,
+            isMobile
+              ? `redirectUrl=${encodeURIComponent('postiz://integrations')}`
+              : '',
           ]
             .filter(Boolean)
             .join('&');
-          const { url, err } = await (
-            await fetch(
-              `/integrations/social/${identifier}${params ? `?${params}` : ''}`
-            )
-          ).json();
+          const response = await fetch(
+            `/integrations/social/${identifier}${params ? `?${params}` : ''}`
+          );
+          if (response.status === 402) {
+            return;
+          }
+          const { url, err } = await response.json();
           if (err) {
             toaster.show(
               t(
@@ -358,16 +510,140 @@ export const AddProviderComponent: FC<{
             return;
           }
 
+          if (isMobile) {
+            // In the mobile WebView the OAuth provider (Google, Facebook,
+            // etc.) typically refuses in-WebView sign-in. Post the URL
+            // out to React Native so it can open the system browser;
+            // `window.open`/`location.href` aren't reliable here because
+            // RN WebView doesn't always route them through the native
+            // navigation intercept. The backend redirects back to the
+            // app via `postiz://` once OAuth completes.
+            const rn = (window as any).ReactNativeWebView;
+            if (rn && typeof rn.postMessage === 'function') {
+              rn.postMessage(JSON.stringify({ type: 'open-external', url }));
+              return;
+            }
+            window.open(url, '_blank');
+            return;
+          }
+
           window.location.href = url;
         };
         if (isWeb3) {
           openWeb3();
           return;
         }
+        if (isChromeExtension) {
+          const confirmed = await new Promise<boolean>((resolve) => {
+            modal.openModal({
+              title: t('chrome_extension_notice', 'Browser Extension Notice'),
+              withCloseButton: true,
+              onClose: () => resolve(false),
+              children: (
+                <ChromeExtensionWarning
+                  onConfirm={() => {
+                    resolve(true);
+                  }}
+                  onCancel={() => {
+                    resolve(false);
+                  }}
+                />
+              ),
+            });
+          });
+          if (!confirmed) {
+            return;
+          }
+          if (
+            !extensionId ||
+            typeof chrome === 'undefined' ||
+            !chrome?.runtime?.sendMessage
+          ) {
+            modal.openModal({
+              title: t('extension_not_available_title', 'Extension Not Found'),
+              withCloseButton: true,
+              children: <ExtensionNotFound />,
+            });
+            return;
+          }
+          try {
+            await new Promise<void>((resolve, reject) => {
+              chrome.runtime.sendMessage(
+                extensionId,
+                { type: 'PING' },
+                (response: any) => {
+                  if (chrome.runtime.lastError || !response?.status) {
+                    reject(new Error('Extension not reachable'));
+                  } else {
+                    resolve();
+                  }
+                }
+              );
+            });
+          } catch {
+            toaster.show(
+              t(
+                'extension_not_installed',
+                'Postiz browser extension is not installed or not reachable.'
+              ),
+              'warning'
+            );
+            return;
+          }
+          try {
+            const cookieResponse = await new Promise<any>((resolve, reject) => {
+              chrome.runtime.sendMessage(
+                extensionId,
+                { type: 'GET_COOKIES', provider: identifier },
+                (response: any) => {
+                  if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                  } else {
+                    resolve(response);
+                  }
+                }
+              );
+            });
+            if (!cookieResponse.success) {
+              toaster.show(
+                cookieResponse.error ||
+                  t(
+                    'extension_cookies_missing',
+                    'Could not get cookies. Please log in to the platform first.'
+                  ),
+                'warning'
+              );
+              return;
+            }
+            const response = await fetch(
+              `/integrations/social/${identifier}${
+                onboarding ? '?onboarding=true' : ''
+              }`
+            );
+            if (response.status === 402) {
+              return;
+            }
+            const { url } = await response.json();
+            modal.closeAll();
+            window.location.href = `/integrations/social/${identifier}?state=${url}&code=${Buffer.from(
+              JSON.stringify(cookieResponse.cookies)
+            ).toString('base64')}${onboarding ? '&onboarding=true' : ''}`;
+          } catch {
+            toaster.show(
+              t(
+                'extension_communication_error',
+                'Failed to communicate with the browser extension.'
+              ),
+              'warning'
+            );
+          }
+          return;
+        }
         if (isExternal) {
           modal.openModal({
             title: 'URL',
             withCloseButton: true,
+            ...(isMobile ? { removeLayout: true, fullScreen: true } : {}),
             classNames: {
               modal: 'bg-transparent text-textColor',
             },
@@ -379,16 +655,21 @@ export const AddProviderComponent: FC<{
           modal.openModal({
             title: t('add_provider_title', 'Add Provider'),
             withCloseButton: true,
+            ...(isMobile ? { removeLayout: true, fullScreen: true } : {}),
             classNames: {
               modal: 'bg-transparent text-textColor',
             },
             children: (
-              <CustomVariables
-                identifier={identifier}
-                gotoUrl={(url: string) => router.push(url)}
-                variables={customFields}
-                onboarding={onboarding}
-              />
+              <div
+                {...(isMobile ? { className: 'h-full bg-black p-[20px]' } : {})}
+              >
+                <CustomVariables
+                  identifier={identifier}
+                  gotoUrl={(url: string) => router.push(url)}
+                  variables={customFields}
+                  onboarding={onboarding}
+                />
+              </div>
             ),
           });
           return;
@@ -405,8 +686,10 @@ export const AddProviderComponent: FC<{
       <div className="flex flex-col">
         <div
           className={clsx(
-            'grid grid-cols-5 gap-[10px] justify-items-center justify-center',
-            onboarding ? 'grid-cols-9' : 'grid-cols-5'
+            isMobile && 'gap-[20px] flex flex-col',
+            !isMobile &&
+              'grid grid-cols-5 gap-[10px] justify-items-center justify-center mobile:!grid-cols-3',
+            isMobile ? {} : onboarding ? 'grid-cols-9' : 'grid-cols-5'
           )}
         >
           {social
@@ -415,7 +698,12 @@ export const AddProviderComponent: FC<{
                 return true;
               }
 
-              return !item.isExternal && !item.isWeb3 && !item.customFields;
+              return (
+                !item.isExternal &&
+                !item.isWeb3 &&
+                !item.isChromeExtension &&
+                !item.customFields
+              );
             })
             .map((item) => (
               <div
@@ -425,6 +713,7 @@ export const AddProviderComponent: FC<{
                   item.identifier,
                   item.isExternal,
                   item.isWeb3,
+                  item.isChromeExtension,
                   item.customFields
                 )}
                 {...(!!item.toolTip
@@ -433,9 +722,12 @@ export const AddProviderComponent: FC<{
                       'data-tooltip-content': item.toolTip,
                     }
                   : {})}
-                className={
-                  'w-full h-[100px] text-[14px] p-[10px] rounded-[8px] bg-newTableHeader text-textColor relative justify-center items-center flex flex-col gap-[10px] cursor-pointer'
-                }
+                className={clsx(
+                  isMobile
+                    ? 'flex-row h-[72px] p-[16px]'
+                    : 'flex-col p-[10px] h-[100px] justify-center mobile:text-[13px] mobile:leading-[1.2]',
+                  'w-full text-[14px] rounded-[8px] bg-newTableHeader text-textColor relative items-center flex gap-[10px] cursor-pointer'
+                )}
               >
                 <div>
                   {item.identifier === 'youtube' ? (
@@ -451,9 +743,14 @@ export const AddProviderComponent: FC<{
                     />
                   )}
                 </div>
-                <div className="whitespace-pre-wrap text-center">
+                <div
+                  className={clsx(
+                    isMobile ? '' : 'whitespace-pre-wrap',
+                    'text-center'
+                  )}
+                >
                   {item.name}
-                  {!!item.toolTip && (
+                  {!!item.toolTip && !isMobile && (
                     <svg
                       width="15"
                       height="15"

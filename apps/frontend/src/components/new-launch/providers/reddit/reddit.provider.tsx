@@ -17,7 +17,7 @@ import {
 import clsx from 'clsx';
 import { useMediaDirectory } from '@gitroom/react/helpers/use.media.directory';
 import { deleteDialog } from '@gitroom/react/helpers/delete.dialog';
-import Image from 'next/image';
+import SafeImage from '@gitroom/react/helpers/safe.image';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { useFormatting } from '@gitroom/frontend/components/launches/helpers/use.formatting';
 const RenderRedditComponent: FC<{
@@ -37,6 +37,7 @@ const RenderRedditComponent: FC<{
     case 'self':
       return (
         <div
+          dir="auto"
           dangerouslySetInnerHTML={{ __html: firstPost?.content }}
           style={{
             whiteSpace: 'pre-wrap',
@@ -119,14 +120,14 @@ const RedditPreview: FC = (props) => {
                 {restOfPosts.map((p, index) => (
                   <div className="flex gap-[8px]" key={index}>
                     <div className="w-[32px] h-[32px] relative">
-                      <Image
+                      <SafeImage
                         width={48}
                         height={48}
                         src={integration?.picture!}
                         alt="x"
                         className="rounded-full w-full h-full relative z-[2]"
                       />
-                      <Image
+                      <SafeImage
                         width={24}
                         height={24}
                         src={`/icons/platforms/${integration?.identifier!}.png`}
@@ -139,6 +140,7 @@ const RedditPreview: FC = (props) => {
                         {integration?.name}
                       </div>
                       <div
+                        dir="auto"
                         dangerouslySetInnerHTML={{ __html: p.text }}
                         style={{
                           whiteSpace: 'pre-wrap',
@@ -214,25 +216,5 @@ export default withProvider({
   SettingsComponent: RedditSettings,
   CustomPreviewComponent: undefined,
   dto: RedditSettingsDto,
-  checkValidity: async (posts, settings: any) => {
-    if (
-      settings?.subreddit?.some(
-        (p: any, index: number) =>
-          p?.value?.type === 'media' && posts?.[0]?.length !== 1
-      )
-    ) {
-      return 'When posting a media post, you must attached exactly one media file.';
-    }
-
-    if (
-      posts?.some((p) =>
-        p?.some((a) => !a?.thumbnail && (a?.path?.indexOf?.('mp4') ?? -1) > -1)
-      )
-    ) {
-      return 'You must attach a thumbnail to your video post.';
-    }
-
-    return true;
-  },
   maximumCharacters: 10000,
 });

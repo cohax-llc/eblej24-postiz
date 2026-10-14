@@ -7,6 +7,9 @@ export class TemporalRegister implements OnModuleInit {
   constructor(private _client: TemporalService) {}
 
   async onModuleInit(): Promise<void> {
+    if (process.env.TEMPORAL_TLS === 'true') {
+      return;
+    }
     // Run search-attributes registration in background so a slow/unreachable
     // Temporal server does not block HTTP server startup (fixes backend never listening on :3000).
     void this.registerSearchAttributes();

@@ -20,8 +20,13 @@ import { ApiTags } from '@nestjs/swagger';
 import { GetUserFromRequest } from '@gitroom/nestjs-libraries/user/user.from.request';
 import { PostsService } from '@gitroom/nestjs-libraries/database/prisma/posts/posts.service';
 import { IntegrationTimeDto } from '@gitroom/nestjs-libraries/dtos/integrations/integration.time.dto';
+import { IntegrationNameDto } from '@gitroom/nestjs-libraries/dtos/integrations/integration.name.dto';
+import { CustomerNameDto } from '@gitroom/nestjs-libraries/dtos/integrations/customer.name.dto';
 import { PlugDto } from '@gitroom/nestjs-libraries/dtos/plugs/plug.dto';
-import { RefreshToken } from '@gitroom/nestjs-libraries/integrations/social.abstract';
+import {
+  Disconnect,
+  RefreshToken,
+} from '@gitroom/nestjs-libraries/integrations/social.abstract';
 
 import { timer } from '@gitroom/helpers/utils/timer';
 import { TelegramProvider } from '@gitroom/nestjs-libraries/integrations/social/telegram.provider';
@@ -43,6 +48,16 @@ export class IntegrationsController {
     private _refreshIntegrationService: RefreshIntegrationService
   ) {}
 
+  @Post('/provider/:id/connect')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  async saveProviderPage(
+    @GetOrgFromRequest() org: Organization,
+    @Param('id') id: string,
+    @Body() body: any
+  ) {
+    return this._integrationService.saveProviderPage(org.id, id, body);
+  }
+
   @Get('/:identifier/internal-plugs')
   getInternalPlugs(@Param('identifier') identifier: string) {
     return this._integrationManager.getInternalPlugs(identifier);
@@ -51,6 +66,15 @@ export class IntegrationsController {
   @Get('/customers')
   getCustomers(@GetOrgFromRequest() org: Organization) {
     return this._integrationService.customers(org.id);
+  }
+
+  @Put('/customers/:id')
+  async updateCustomerName(
+    @GetOrgFromRequest() org: Organization,
+    @Param('id') id: string,
+    @Body() body: CustomerNameDto
+  ) {
+    return this._integrationService.updateCustomerName(org.id, id, body.name);
   }
 
   @Put('/:id/group')
@@ -75,6 +99,15 @@ export class IntegrationsController {
     return this._integrationService.updateOnCustomerName(org.id, id, body.name);
   }
 
+  @Put('/:id/custom-name')
+  async updateCustomName(
+    @GetOrgFromRequest() org: Organization,
+    @Param('id') id: string,
+    @Body() body: IntegrationNameDto
+  ) {
+    return this._integrationService.updateCustomName(org.id, id, body.name);
+  }
+
   @Get('/list')
   async getIntegrationList(@GetOrgFromRequest() org: Organization) {
     return {
@@ -86,11 +119,13 @@ export class IntegrationsController {
             p.providerIdentifier
           );
           return {
-            name: p.name,
+            name: p.customName || p.name,
+            originalName: p.name,
             id: p.id,
             internalId: p.internalId,
             disabled: p.disabled,
             editor: findIntegration.editor,
+            stripLinks: !!findIntegration?.stripLinks?.(),
             picture: p.picture || '/no-picture.jpg',
             identifier: p.providerIdentifier,
             inBetweenSteps: p.inBetweenSteps,
@@ -185,6 +220,7 @@ export class IntegrationsController {
     @Param('integration') integration: string,
     @Query('refresh') refresh: string,
     @Query('externalUrl') externalUrl: string,
+    @Query('redirectUrl') redirectUrl: string,
     @Query('onboarding') onboarding: string,
     @GetOrgFromRequest() org: Organization
   ) {
@@ -196,8 +232,16 @@ export class IntegrationsController {
       throw new Error('Integration not allowed');
     }
 
-    const integrationProvider =
-      this._integrationManager.getSocialIntegration(integration);
+    // A provider migrated via MIGRATE_PROVIDERS reconnects through its target
+    // provider's OAuth: the callback lands on the target and the channel is
+    // migrated in place (see migrateIntegration).
+    const migrateTo = refresh
+      ? this._integrationManager.getMigrationTarget(integration)
+      : undefined;
+
+    const integrationProvider = this._integrationManager.getSocialIntegration(
+      migrateTo || integration
+    );
 
     if (integrationProvider.externalUrl && !externalUrl) {
       throw new Error('Missing external url');
@@ -220,6 +264,10 @@ export class IntegrationsController {
 
       if (onboarding === 'true') {
         await ioRedis.set(`onboarding:${state}`, 'true', 'EX', 3600);
+      }
+
+      if (redirectUrl) {
+        await ioRedis.set(`redirect:${state}`, redirectUrl, 'EX', 3600);
       }
 
       await ioRedis.set(`organization:${state}`, org.id, 'EX', 3600);
@@ -335,6 +383,16 @@ export class IntegrationsController {
 
         return load;
       } catch (err) {
+        // The platform will keep rejecting this channel until the user
+        // re-connects it: mark it as needing a refresh instead of retrying.
+        if (err instanceof Disconnect) {
+          await this._integrationService.disconnectChannel(
+            org.id,
+            getIntegration
+          );
+          return false;
+        }
+
         if (err instanceof RefreshToken) {
           const data = await this._refreshIntegrationService.refresh(
             getIntegration
@@ -438,9 +496,7 @@ export class IntegrationsController {
   }
 
   @Post('/moltbook/register')
-  async moltbookRegister(
-    @Body() body: { name: string; description: string }
-  ) {
+  async moltbookRegister(@Body() body: { name: string; description: string }) {
     try {
       const provider = new MoltbookProvider();
       const result = await provider.registerAgent(body.name, body.description);

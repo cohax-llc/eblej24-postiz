@@ -10,6 +10,7 @@ import dayjs from 'dayjs';
 import { continueProviderList } from '@gitroom/frontend/components/new-launch/providers/continue-provider/list';
 import { IntegrationContext } from '@gitroom/frontend/components/launches/helpers/use.integration';
 import { newDayjs } from '@gitroom/frontend/components/layout/set.timezone';
+import { useVariables } from '@gitroom/react/helpers/variable.context';
 
 interface TwoStepState {
   integrationId: string;
@@ -31,6 +32,7 @@ export const ContinueIntegration: FC<{
   const { push } = useRouter();
   const t = useT();
   const fetch = useFetch();
+  const { extensionId, backendUrl } = useVariables();
   const [error, setError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [twoStepState, setTwoStepState] = useState<TwoStepState | null>(null);
@@ -39,11 +41,7 @@ export const ContinueIntegration: FC<{
 
   // Helper to handle navigation - redirects if logged or returnURL exists, otherwise shows inline
   const navigateOrShow = useCallback(
-    (
-      path: string,
-      returnURL: string | undefined,
-      successMessage: string
-    ) => {
+    (path: string, returnURL: string | undefined, successMessage: string) => {
       if (returnURL) {
         // If returnURL exists, always redirect to it with the path params
         const params = path.includes('?') ? path.split('?')[1] : '';
@@ -59,10 +57,26 @@ export const ContinueIntegration: FC<{
     [logged, push]
   );
   const modifiedParams = useMemo(() => {
+    if (provider === 'mewe') {
+      return {
+        state: searchParams.state || '',
+        code: searchParams.loginRequestToken || '',
+        refresh: searchParams.refresh || '',
+      };
+    }
     if (provider === 'x') {
       return {
         state: searchParams.oauth_token || '',
         code: searchParams.oauth_verifier || '',
+        refresh: searchParams.refresh || '',
+      };
+    }
+
+    if (provider === 'tiktok-business') {
+      // The TikTok Business API redirects back with `auth_code` instead of `code`
+      return {
+        state: searchParams.state || '',
+        code: searchParams.auth_code || searchParams.code || '',
         refresh: searchParams.refresh || '',
       };
     }
@@ -72,6 +86,17 @@ export const ContinueIntegration: FC<{
         ...searchParams,
         state: searchParams.state || '',
         code: searchParams.code + '&&&&' + searchParams.device_id,
+      };
+    }
+
+    if (provider === 'mewe') {
+      const hash =
+        typeof window !== 'undefined' ? window.location.hash.substring(1) : '';
+      const hashParams = new URLSearchParams(hash);
+      return {
+        state: hashParams.get('state') || searchParams.state || '',
+        code: hashParams.get('loginRequestToken') || '',
+        refresh: searchParams.refresh || '',
       };
     }
 
@@ -124,7 +149,9 @@ export const ContinueIntegration: FC<{
         data.status !== HttpStatusCode.Created
       ) {
         const errorData = await data.json().catch(() => ({}));
-        setErrorMessage(errorData.message || errorData.msg || 'Could not add provider');
+        setErrorMessage(
+          errorData.message || errorData.msg || 'Could not add provider'
+        );
         setError(true);
         return;
       }
@@ -135,8 +162,37 @@ export const ContinueIntegration: FC<{
         onboarding: resOnboarding,
         pages,
         returnURL,
+        extensionToken,
       } = await data.json();
       const onboarding = resOnboarding || searchParams.onboarding === 'true';
+
+      // Store refresh token in extension for background cookie refresh
+      if (
+        extensionToken &&
+        extensionId &&
+        typeof chrome !== 'undefined' &&
+        chrome?.runtime?.sendMessage
+      ) {
+        try {
+          chrome.runtime.sendMessage(
+            extensionId,
+            {
+              type: 'STORE_REFRESH_TOKEN',
+              provider,
+              integrationId: id,
+              jwt: extensionToken,
+              backendUrl,
+            },
+            () => {
+              if (chrome.runtime.lastError) {
+                return;
+              }
+            }
+          );
+        } catch {
+          // Silently ignore — extension may not be available
+        }
+      }
 
       // If it's a two-step provider, show the selection UI inline
       if (inBetweenSteps && !searchParams.refresh) {
@@ -167,7 +223,9 @@ export const ContinueIntegration: FC<{
 
       try {
         // Use public or authenticated endpoint based on the flow
-        const endpoint = `/integrations/provider/${twoStepState.integrationId}/connect`;
+        const endpoint = logged
+          ? `/integrations/provider/${twoStepState.integrationId}/connect`
+          : `/integrations/public/provider/${twoStepState.integrationId}/connect`;
 
         const response = await fetch(endpoint, {
           method: 'POST',
@@ -214,6 +272,8 @@ export const ContinueIntegration: FC<{
       'linkedin-page': 'LinkedIn',
       youtube: 'YouTube',
       gmb: 'Google Business',
+      tumblr: 'Tumblr',
+      'tiktok-business': 'TikTok Business',
     };
     return names[provider] || provider;
   }, [provider]);

@@ -23,6 +23,7 @@ import {
 } from '@gitroom/backend/services/auth/permissions/permission.exception.class';
 import { RefreshIntegrationService } from '@gitroom/nestjs-libraries/integrations/refresh.integration.service';
 import { OrganizationService } from '@gitroom/nestjs-libraries/database/prisma/organizations/organization.service';
+import { getSsrfSafeDispatcher } from '@gitroom/nestjs-libraries/dtos/webhooks/ssrf.safe.dispatcher';
 
 @ApiTags('Integrations')
 @Controller('/integrations')
@@ -61,7 +62,11 @@ export class NoAuthIntegrationsController {
       ? 'none'
       : await ioRedis.get(`login:${body.state}`);
     if (!getCodeVerifier) {
-      throw new Error('Invalid state');
+      // The state expires after an hour and is deleted once used (page reload)
+      throw new HttpException(
+        'This connection link expired or was already used, please connect the channel again',
+        400
+      );
     }
 
     const organization = await ioRedis.get(`organization:${body.state}`);
@@ -135,7 +140,14 @@ export class NoAuthIntegrationsController {
               refresh,
               auth.accessToken
             );
-            return res({ ...newAuth, refreshToken: body.refresh });
+            // keep the fresh refresh token and expiration from the new
+            // authentication, otherwise the stored refresh token is wiped and
+            // the channel breaks again as soon as the access token expires
+            return res({
+              ...newAuth,
+              refreshToken: auth.refreshToken,
+              expiresIn: auth.expiresIn,
+            });
           } catch (err: any) {
             return res({
               error: err.message,
@@ -163,6 +175,7 @@ export class NoAuthIntegrationsController {
           });
         }
 
+        console.log(`Authentication failed for ${integration}:`, err);
         return res({
           error: 'Authentication failed',
           accessToken: '',
@@ -181,12 +194,6 @@ export class NoAuthIntegrationsController {
 
     if (!id) {
       throw new NotEnoughScopes('Invalid API key');
-    }
-
-    if (refresh && String(id) !== String(refresh)) {
-      throw new NotEnoughScopes(
-        'Please refresh the channel that needs to be refreshed'
-      );
     }
 
     let validName = name;
@@ -209,6 +216,30 @@ export class NoAuthIntegrationsController {
       throw new HttpException('', 412);
     }
 
+    if (refresh && String(id) !== String(refresh)) {
+      // A reconnect that returns a different id is either the wrong account or
+      // a channel migrating to another provider (MIGRATE_PROVIDERS) - the two
+      // apps return different app-scoped ids, so the channel is matched by
+      // profile and moved in place. Throws for anything else. Runs after every
+      // check that can reject the connect, so a rejection can never leave a
+      // half-migrated channel behind.
+      await this._integrationService.migrateIntegration(
+        org.id,
+        refresh,
+        integration,
+        { id: String(id), username }
+      );
+    } else if (!refresh) {
+      // A fresh connect of a migration target for an account the org already
+      // has on the source provider adopts that channel instead of creating a
+      // duplicate. No-op for everything else.
+      await this._integrationService.migrateIntegrationOnConnect(
+        org.id,
+        integration,
+        { id: String(id), username }
+      );
+    }
+
     const createUpdate =
       await this._integrationService.createOrUpdateIntegration(
         additionalSettings,
@@ -229,6 +260,10 @@ export class NoAuthIntegrationsController {
         details
           ? AuthService.fixedEncryption(details)
           : integrationProvider.customFields
+          ? AuthService.fixedEncryption(
+              Buffer.from(body.code, 'base64').toString()
+            )
+          : integrationProvider.isChromeExtension
           ? AuthService.fixedEncryption(
               Buffer.from(body.code, 'base64').toString()
             )
@@ -273,6 +308,8 @@ export class NoAuthIntegrationsController {
               apiKey: org.apiKey,
             }),
           }),
+          // @ts-ignore — undici option, not in lib.dom fetch types
+          dispatcher: getSsrfSafeDispatcher(),
         });
       } catch (err) {}
 
@@ -284,15 +321,35 @@ export class NoAuthIntegrationsController {
       await ioRedis.del(`redirect:${body.state}`);
     }
 
+    const extensionToken = integrationProvider.isChromeExtension
+      ? AuthService.signJWT({
+          integrationId: createUpdate.id,
+          organizationId: org.id,
+          internalId: String(id),
+          provider: integration,
+        })
+      : undefined;
+
+    // Never leak stored credentials (signed/encrypted secrets) back to the
+    // caller. These columns hold the integration access token, refresh token
+    // and encrypted custom instance details and must stay server-side.
+    const {
+      token: _token,
+      refreshToken: _refreshToken,
+      customInstanceDetails: _customInstanceDetails,
+      ...safeIntegration
+    } = createUpdate as any;
+
     return {
-      ...createUpdate,
+      ...safeIntegration,
       onboarding: onboarding === 'true',
       pages,
       ...(returnURL ? { returnURL } : {}),
+      ...(extensionToken ? { extensionToken } : {}),
     };
   }
 
-  @Post('/provider/:id/connect')
+  @Post('/public/provider/:id/connect')
   async saveProviderPage(@Param('id') id: string, @Body() body: any) {
     if (!body.state) {
       throw new Error('Invalid state');
@@ -306,5 +363,76 @@ export class NoAuthIntegrationsController {
     const org = await this._organizationService.getOrgById(organization);
 
     return this._integrationService.saveProviderPage(org.id, id, body);
+  }
+
+  @Post('/extension-refresh')
+  async extensionRefreshCookies(
+    @Body() body: { jwt: string; cookies: string }
+  ) {
+    let payload: any;
+    try {
+      payload = AuthService.verifyJWT(body.jwt);
+    } catch {
+      throw new HttpException('Invalid token', 401);
+    }
+
+    const { integrationId, organizationId, internalId, provider } = payload;
+    if (!integrationId || !organizationId || !internalId || !provider) {
+      throw new HttpException('Invalid token payload', 400);
+    }
+
+    const integration = await this._integrationService.getIntegrationById(
+      organizationId,
+      integrationId
+    );
+    if (!integration || integration.internalId !== internalId) {
+      throw new HttpException('Integration not found', 404);
+    }
+
+    const integrationProvider =
+      this._integrationManager.getSocialIntegration(provider);
+    if (!integrationProvider?.isChromeExtension) {
+      throw new HttpException('Not a Chrome extension integration', 400);
+    }
+
+    const authResult = await integrationProvider.authenticate({
+      code: body.cookies,
+      codeVerifier: '',
+    });
+
+    if (typeof authResult === 'string') {
+      throw new HttpException(authResult, 400);
+    }
+
+    if (String(authResult.id) !== String(integration.internalId)) {
+      await this._integrationService.refreshNeeded(
+        organizationId,
+        integrationId
+      );
+      return { success: false, reason: 'account_mismatch' };
+    }
+
+    await this._integrationService.createOrUpdateIntegration(
+      undefined,
+      false,
+      organizationId,
+      integration.name,
+      undefined,
+      'social',
+      integration.internalId,
+      integration.providerIdentifier,
+      authResult.accessToken,
+      '',
+      authResult.expiresIn,
+      undefined,
+      false,
+      undefined,
+      undefined,
+      AuthService.signJWT(
+        JSON.parse(Buffer.from(body.cookies, 'base64').toString())
+      )
+    );
+
+    return { success: true };
   }
 }

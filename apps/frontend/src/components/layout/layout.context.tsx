@@ -28,7 +28,8 @@ function LayoutContextInner(params: { children: ReactNode }) {
     async (url: string, options: RequestInit, response: Response) => {
       if (
         typeof window !== 'undefined' &&
-        window.location.href.includes('/p/')
+        (window.location.href.includes('/p/') ||
+          window.location.pathname.startsWith('/provider/'))
       ) {
         return true;
       }
@@ -106,7 +107,10 @@ function LayoutContextInner(params: { children: ReactNode }) {
         if (
           await deleteDialog(
             (
-              await response.json()
+              await response
+                .clone()
+                .json()
+                .catch(() => ({}))
             ).message,
             'Move to billing',
             'Payment Required'

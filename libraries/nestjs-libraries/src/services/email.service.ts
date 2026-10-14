@@ -4,6 +4,8 @@ import { ResendProvider } from '@gitroom/nestjs-libraries/emails/resend.provider
 import { EmptyProvider } from '@gitroom/nestjs-libraries/emails/empty.provider';
 import { NodeMailerProvider } from '@gitroom/nestjs-libraries/emails/node.mailer.provider';
 import { TemporalService } from 'nestjs-temporal-core';
+import { timer } from '@gitroom/helpers/utils/timer';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class EmailService {
@@ -37,18 +39,19 @@ export class EmailService {
     to: string,
     subject: string,
     html: string,
-    sendTo: 'top' | 'bottom',
+    addTo: 'top' | 'bottom',
     replyTo?: string
   ) {
+    if (!to || !subject) {
+      return;
+    }
+
     return this._temporalService.client
       .getRawClient()
-      ?.workflow.signalWithStart('sendEmailWorkflow', {
+      ?.workflow.start('sendSingleEmailWorkflow', {
         taskQueue: 'main',
-        workflowId: 'send_email',
-        signal: 'sendEmail',
-        args: [{ queue: [] }],
-        signalArgs: [{ to, subject, html, replyTo, sendTo }],
-        workflowIdConflictPolicy: 'USE_EXISTING',
+        workflowId: `send_email_${randomUUID()}`,
+        args: [{ to, subject, html, replyTo, addTo }],
       });
   }
 
@@ -123,18 +126,27 @@ export class EmailService {
     </div>
     `;
 
-    try {
-      const sends = await this.emailService.sendEmail(
-        to,
-        subject,
-        modifiedHtml,
-        process.env.EMAIL_FROM_NAME,
-        process.env.EMAIL_FROM_ADDRESS,
-        replyTo
-      );
-      console.log(sends);
-    } catch (err) {
-      console.log(err);
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const sends = await this.emailService.sendEmail(
+          to,
+          subject,
+          modifiedHtml,
+          process.env.EMAIL_FROM_NAME,
+          process.env.EMAIL_FROM_ADDRESS,
+          replyTo
+        );
+        console.log(sends);
+        return;
+      } catch (err) {
+        lastErr = err;
+        console.log(`Email attempt ${attempt + 1}/3 failed:`, err);
+        if (attempt < 2) {
+          await timer(700);
+        }
+      }
     }
+    console.log(`Email to ${to} failed after 3 attempts:`, lastErr);
   }
 }

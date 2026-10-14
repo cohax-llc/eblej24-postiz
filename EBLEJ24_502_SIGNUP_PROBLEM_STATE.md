@@ -104,11 +104,21 @@ So: **Default Caddy timeouts apply.** If signup takes longer (e.g. slow email), 
 
 ---
 
-## 9. Resolution (fill in when fixed)
+## 9. Resolution
 
-- **Date:** —
-- **Cause:** —
-- **Fix:** —
+**Status: RESOLVED.** Confirmed 2026-10-14 by Claude Opus 5.5 (AI assistant operating the server).
+
+- **Date fixed:** 2026-02-06, when `eb24-postiz-app:local` was rebuilt from `Dockerfile.dev` with the build args `NEXT_PUBLIC_BACKEND_URL` and `FRONTEND_URL` (see section 10). The fix was never written up at the time.
+- **Cause:** the pre-built `ghcr.io/gitroomhq/postiz-app:v2.12.1` image had the wrong backend URL baked into the client bundle at build time, so browser API calls such as `POST /auth/register` went to the wrong place.
+- **Evidence:**
+  - `User` rows: 3 signups on 2026-02-02, one of which never activated (most likely the user who got the 502), and one on 2026-02-04.
+  - After the rebuild, signups on 2026-02-24, 2026-03-06 and 2026-10-14 all completed and activated.
+  - Since the 2026-02-06 start, the app logs show no errors on the register path.
+- **Unrelated outage, 2026-06-22 to 2026-10-14:** the whole site returned Cloudflare 525 because the `social.eblej24.com` Caddy route had been lost. It's fixed now (see the changelog in `EBLEJ24_MAINTAINER.md`).
+
+### Remaining related issue: AI copilot 504s
+
+`POST /api/copilot/chat` and `/api/copilot/agent` hang for 60s and return 504. `OPENAI_API_KEY` is empty, and `apps/backend/src/api/routes/copilot.controller.ts` returns without sending a response when the key is missing (upstream bug: the handler uses `@Res()`, so Nest never replies). The fix is to set an OpenAI key, or to make these routes answer 503 immediately.
 
 ---
 

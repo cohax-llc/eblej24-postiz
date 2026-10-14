@@ -474,6 +474,33 @@ docker exec -it postgres psql -U postgres
 
 **Maintainers: Add entries here when making changes. Most recent first.**
 
+### 2026-10-14 - Upgrade to upstream v2.25.1
+
+**Author:** Claude Opus 5.5 (AI Assistant)
+
+**Upgrade:** from v2.14.0 to v2.25.1 (1,107 upstream commits). Merge commit `835396a4`. Frameworks: Next 14→16, React 18→19, NestJS 10→11. The infra (Temporal 1.28.1, PG 17, Redis 7.2, ES 7.17) and Dockerfile.dev are unchanged.
+
+**Conflict resolutions (keep these on future merges):**
+- `libraries/nestjs-libraries/src/temporal/temporal.register.ts`: **keep our non-blocking search-attribute registration.** Upstream still awaits it inside `onModuleInit`, which blocks HTTP startup and caused the original 502s. In the staging test a Temporal error here was non-fatal only because of this patch. Upstream's `TEMPORAL_TLS` guard was added on top.
+- `var/docker/nginx.conf`: **keep our extensionless legacy-upload fallback** (80 production files have no extension) and keep `default_type image/jpeg`. Upstream's security-advisory headers (nosniff + sandboxed CSP) and `types {}` map are applied to **every** `/uploads` location, because our regex locations would otherwise shadow upstream's block.
+- `public.integrations.controller.ts`: take upstream's. Our upload-extension fix was merged upstream (#1207) and later replaced by `MediaService.uploadFromUrl`, which sniffs the real file type.
+- `.github/dependabot.yml`: deleted, as upstream did.
+
+**Behaviour changes:**
+- `prisma db push` no longer uses `--accept-data-loss`. A lossy schema change now stops the app at boot instead of dropping data.
+- `POST /public/v1/posts` validates per provider server-side and rejects the whole batch (X 280 chars, IG needs media, LinkedIn 3000). Production only uses Facebook today.
+- upload-from-url requires public https URLs.
+- The image no longer contains `.env`, because the build ran from a clean checkout.
+
+**Verification:**
+- Staging test on a restored production DB copy, with the orchestrator off: db push in sync, eblej24-shaped upload and post (201), media serving identical, UTF-8 and `&` preserved.
+- Production after cutover: data counts unchanged, public API OK, media OK, all PM2 apps online, workers polling.
+
+**Rollback:**
+- Image `eb24-postiz-app:pre-upgrade-2026-10-14`, also archived at `/root/backups/postiz-pre-upgrade-2026-10-14/`. Run `docker tag eb24-postiz-app:pre-upgrade-2026-10-14 eb24-postiz-app:local && docker compose up -d --no-build eb24-postiz-app`.
+- Git tag `pre-upgrade-2026-10-14`.
+- The old image's `db push --accept-data-loss` would drop the new tables, which only hold new-feature data.
+
 ### 2026-10-14 - Restore public route, add DB backups
 
 **Author:** Claude Opus 5.5 (AI Assistant)

@@ -1,7 +1,12 @@
 # =============================================================================
-# Postiz - Caddy Configuration for eblej24.com
+# Postiz - Caddy Configuration for eblej24.com (REFERENCE COPY)
 # =============================================================================
-# Import this file into the main Caddyfile or add via CaddyManager
+# The live route lives in the server platform repo:
+#   eblej24-server/config/caddy/Caddyfile
+# Caddy does NOT read this file. Keep it in sync with the block there, and edit
+# and push eblej24-server when the route needs to change. Do not add the route
+# through CaddyManager only: that is how it was lost before (see changelog
+# 2026-10-14 in EBLEJ24_MAINTAINER.md).
 #
 # Services:
 #   - social.eblej24.com -> Postiz application (eb24-postiz-app:5000)
@@ -12,57 +17,19 @@
 # -----------------------------------------------------------------------------
 # Postiz - Social Media Scheduler
 # -----------------------------------------------------------------------------
-# Main application accessible at: https://social.eblej24.com
-# API accessible at: https://social.eblej24.com/api/*
+# Accessible at: https://social.eblej24.com
+# Single upstream: nginx inside eb24-postiz-app:5000 routes /api, /uploads and
+# the frontend itself. WebSockets are proxied automatically by reverse_proxy.
+# `security_headers` is a snippet defined in the eblej24-server Caddyfile.
 social.eblej24.com {
-	header {
-		# Security headers
-		X-Content-Type-Options "nosniff"
-		X-Frame-Options "SAMEORIGIN"
-		X-XSS-Protection "1; mode=block"
-		Referrer-Policy "strict-origin-when-cross-origin"
-		# Remove server identification
-		-Server
+	import security_headers
+
+	# Allow large media uploads
+	request_body {
+		max_size 100MB
 	}
 
-	# API requests
-	handle /api/* {
-		reverse_proxy eb24-postiz-app:5000 {
-			health_uri /
-			health_interval 30s
-			health_timeout 10s
-		}
-	}
-
-	# Upload handling with increased body size (100MB limit)
-	handle /uploads/* {
-		request_body {
-			max_size 100MB
-		}
-		reverse_proxy eb24-postiz-app:5000 {
-			health_uri /
-			health_interval 30s
-			health_timeout 10s
-		}
-	}
-
-	# WebSocket support for real-time updates
-	handle /socket.io/* {
-		reverse_proxy eb24-postiz-app:5000 {
-			transport http {
-				versions h2c 1.1
-			}
-		}
-	}
-
-	# All other requests (frontend)
-	handle {
-		reverse_proxy eb24-postiz-app:5000 {
-			health_uri /
-			health_interval 30s
-			health_timeout 10s
-		}
-	}
+	reverse_proxy eb24-postiz-app:5000
 
 	log {
 		output stdout

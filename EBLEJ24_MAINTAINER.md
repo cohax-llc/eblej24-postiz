@@ -186,15 +186,13 @@ All services apply:
 
 ### config/caddy/Caddyfile
 
-Caddy reverse proxy configuration for `social.eblej24.com`.
+**Reference copy only.** The live route is in `eblej24-server/config/caddy/Caddyfile`, which is what Caddy loads. If you change the route, update both files and push `eblej24-server`.
 
 ```
 social.eblej24.com {
-    header { ... }           # Security headers
-    handle /api/* { ... }    # API requests -> postiz:5000
-    handle /uploads/* { ... } # File uploads (100MB limit)
-    handle /socket.io/* { ... } # WebSocket support
-    handle { ... }           # Frontend -> postiz:5000
+    import security_headers      # snippet from the eblej24-server Caddyfile
+    request_body { max_size 100MB }
+    reverse_proxy eb24-postiz-app:5000   # nginx in the container routes /api, /uploads, frontend, websockets
 }
 ```
 
@@ -253,16 +251,20 @@ data/
 
 ### Backup
 
-```bash
-# Full backup
-tar -czvf backup-$(date +%Y%m%d-%H%M%S).tar.gz ./data/
+> PostgreSQL and Elasticsearch use **named Docker volumes** (`eb24-postiz-postgres-data`, `eb24-postiz-elasticsearch-data`), not `./data/postgres`. A tarball of `./data/` only covers Redis and uploads.
 
-# Restore
-docker compose down
-rm -rf ./data/*
-tar -xzvf backup-YYYYMMDD-HHMMSS.tar.gz
-docker compose up -d
+**Databases:** these are dumped automatically every night at 02:30 by `eblej24-server/scripts/backup-postiz-db.sh` (root crontab). The script dumps `postiz`, `temporal` and `temporal_visibility` to `/root/backups/postiz/YYYY-MM-DD/` and keeps 7 days. Its log is `/var/log/postiz-backup.log`.
+
+```bash
+# Run a backup now
+/root/projects/eblej24-server/scripts/backup-postiz-db.sh
+
+# Restore one database
+gunzip -c /root/backups/postiz/<date>/postiz-<stamp>.sql.gz \
+  | docker exec -i eb24-postiz-postgres sh -c 'psql -U "$POSTGRES_USER" -d postiz'
 ```
+
+**Uploads and Redis:** run `tar -czf postiz-files-$(date +%Y%m%d).tar.gz ./data/postiz ./data/redis`.
 
 ### Important Notes
 
@@ -405,7 +407,7 @@ If upstream's docker-compose shows new services or env vars we need:
 
 1. eblej24-server must be running (creates networks)
 2. DNS configured: `social.eblej24.com` → server IP
-3. Caddyfile imported on main server
+3. `social.eblej24.com` block present in `eblej24-server/config/caddy/Caddyfile` (see `config/caddy/Caddyfile` here)
 
 ### First-Time Setup
 
@@ -431,7 +433,7 @@ docker compose up -d
 # 6. Check logs
 docker compose logs -f
 
-# 7. Import Caddyfile to main server (via CaddyManager or CLI)
+# 7. Add the route to eblej24-server/config/caddy/Caddyfile, reload Caddy, commit + push eblej24-server
 ```
 
 ### Updating
@@ -471,6 +473,19 @@ docker exec -it postgres psql -U postgres
 ## Changelog
 
 **Maintainers: Add entries here when making changes. Most recent first.**
+
+### 2026-10-14 - Restore public route, add DB backups
+
+**Author:** Claude Opus 5.5 (AI Assistant)
+
+**Problem:** https://social.eblej24.com returned Cloudflare 525. The `eblej24-server` Caddyfile had no `social.eblej24.com` block, and the route wasn't in that repo's history either. It had most likely been added through CaddyManager only, and was lost when the `caddy` container was recreated on 2026-06-22. A second problem made this harder to spot: Caddy mounted the Caddyfile as a single file, git had replaced that file's inode, and so Caddy silently ignored edits to it.
+
+**Changes:**
+- `eblej24-server` `67f861e`: added the `social.eblej24.com` route (proxies to `eb24-postiz-app:5000`, with shared security headers and a 100MB upload limit).
+- `eblej24-server` `d213820`: Caddy now mounts the `config/caddy/` directory instead of the single file, and the repo gains `scripts/backup-postiz-db.sh`, run nightly from root's crontab.
+- This repo: `config/caddy/Caddyfile` is now a marked reference copy of the live block (a single `reverse_proxy` instead of per-path handles). The Backup, Deployment and Caddyfile sections are updated.
+
+**Not changed:** the signup-502 investigation (`EBLEJ24_502_SIGNUP_PROBLEM_STATE.md`) is still open.
 
 ### 2026-01-23 - Initial eblej24 Integration
 

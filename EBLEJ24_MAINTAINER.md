@@ -474,7 +474,12 @@ docker exec -it postgres psql -U postgres
 
 **Maintainers: Add entries here when making changes. Most recent first.**
 
-### 2026-10-14 - Upgrade to upstream v2.25.1
+### 2026-10-15 - Remove upstream's staging-conflicts workflow
+
+**Author:** Claude Opus 5.5 (AI Assistant)
+
+The v2.25.1 merge brought in `.github/workflows/staging-conflicts.yml`. It is upstream's job that merges main into **their** `staging` branch every 10 minutes and needs `STAGING_MERGE_KEY` and `CLAUDE_CODE_OAUTH_TOKEN`. This fork has no `staging` branch, so every scheduled run failed at checkout ("A branch or tag with the name 'staging' could not be found"). It never reached a billable step. Deleted. It has no runtime effect.
+
 
 **Author:** Claude Opus 5.5 (AI Assistant)
 
@@ -485,6 +490,7 @@ docker exec -it postgres psql -U postgres
 - `var/docker/nginx.conf`: **keep our extensionless legacy-upload fallback** (80 production files have no extension) and keep `default_type image/jpeg`. Upstream's security-advisory headers (nosniff + sandboxed CSP) and `types {}` map are applied to **every** `/uploads` location, because our regex locations would otherwise shadow upstream's block.
 - `public.integrations.controller.ts`: take upstream's. Our upload-extension fix was merged upstream (#1207) and later replaced by `MediaService.uploadFromUrl`, which sniffs the real file type.
 - `.github/dependabot.yml`: deleted, as upstream did.
+- `.github/workflows/staging-conflicts.yml`: **keep it deleted** (removed 2026-10-15). It is upstream's bot for their own `staging` branch and needs their secrets. On a merge, resolve the modify/delete conflict with `git rm`.
 
 **Behaviour changes:**
 - `prisma db push` no longer uses `--accept-data-loss`. A lossy schema change now stops the app at boot instead of dropping data.
